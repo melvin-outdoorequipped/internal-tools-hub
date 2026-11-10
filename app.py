@@ -37,6 +37,7 @@ pg = st.navigation({
         st.Page("app.py", title="Home", icon="🏠"),
         st.Page("views/amazon_converter.py", title="Amazon Databank Converter", icon="📦"),
         st.Page("views/all_listing_converter.py", title="All Listing Converter", icon="🛠️"),
+        st.Page("views/sku_gap_finder.py", title="SKU Gap Finder", icon="🔎"),
     ]
 })
 
@@ -49,10 +50,9 @@ if pg.title == "Home":
 
     st.markdown("### Available Tools")
 
-    # 3-Column Layout for Tools
-    col1, col2, col3 = st.columns(3)
+    # First Row of Tools
+    col1, col2 = st.columns(2)
 
-    # Tool 1: Amazon Databank Converter
     with col1:
         with st.container():
             st.markdown(
@@ -68,7 +68,6 @@ if pg.title == "Home":
             if st.button("Open Converter", key="btn_databank", use_container_width=True):
                 st.switch_page("views/amazon_converter.py")
 
-    # Tool 2: All Listing Converter
     with col2:
         with st.container():
             st.markdown(
@@ -84,8 +83,27 @@ if pg.title == "Home":
             if st.button("Open Tool", key="btn_all_listing", use_container_width=True):
                 st.switch_page("views/all_listing_converter.py")
 
-    # Tool 3: Future Tool
+    st.write("") # Spacing between rows
+
+    # Second Row of Tools
+    col3, col4 = st.columns(2)
+
     with col3:
+        with st.container():
+            st.markdown(
+                """
+                <div class="tool-card">
+                    <h3>🔎 SKU Gap Finder</h3>
+                    <p>Compare your All Listing file against your Databank to instantly find missing SKUs.</p>
+                </div>
+                """, 
+                unsafe_allow_html=True
+            )
+            st.write("") 
+            if st.button("Open Finder", key="btn_gap_finder", use_container_width=True):
+                st.switch_page("views/sku_gap_finder.py")
+
+    with col4:
         with st.container():
             st.markdown(
                 """
