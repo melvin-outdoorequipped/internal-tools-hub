@@ -1,5 +1,6 @@
 """
 SKU Gap Finder — Compare All Listing vs Databank (ZIP or CSV).
+Includes ASIN and Status for missing SKUs.
 """
 import io
 import zipfile
@@ -31,31 +32,34 @@ if st.button("🔎 Find Missing SKUs", type="primary", use_container_width=True)
                 df_all = pd.read_csv(file_all, dtype=str)
                 df_all.columns = [str(c).strip().lower() for c in df_all.columns]
 
-                if "seller-sku" not in df_all.columns:
-                    st.error("❌ 'All Listing' file must contain a 'seller-sku' column.")
+                required_cols = ["seller-sku", "asin1", "status"]
+                missing_req = [c for c in required_cols if c not in df_all.columns]
+                
+                if missing_req:
+                    st.error(f"❌ 'All Listing' file must contain these columns: {missing_req}")
                 else:
-                    skus_all = set(df_all["seller-sku"].dropna().astype(str).str.strip().unique())
+                    # Clean up the All Listing data
+                    df_all = df_all.dropna(subset=["seller-sku"])
+                    df_all["seller-sku"] = df_all["seller-sku"].astype(str).str.strip()
+                    
+                    # Get unique SKUs from All Listing
+                    skus_all = set(df_all["seller-sku"].unique())
 
                     # 2. Read the Databank ZIP file
                     skus_db = set()
                     
                     with zipfile.ZipFile(file_db, "r") as z:
-                        # Loop through every file in the ZIP
                         for filename in z.namelist():
-                            # Check if it's a CSV file
-                            if filename.endswith(".csv"):
+                            if filename.endswith(".csv") and not filename.startswith("_"): 
                                 with z.open(filename) as f:
                                     try:
-                                        # Read the CSV from the ZIP
                                         df_brand = pd.read_csv(f, dtype=str)
                                         df_brand.columns = [str(c).strip().lower() for c in df_brand.columns]
                                         
-                                        # If this brand CSV has SKUs, add them to our master set
                                         if "sku" in df_brand.columns:
                                             brand_skus = df_brand["sku"].dropna().astype(str).str.strip().unique()
                                             skus_db.update(brand_skus)
-                                    except Exception as e:
-                                        # Skip files that can't be read (like audit files)
+                                    except Exception:
                                         pass
 
                     # 3. Find the difference
@@ -70,14 +74,25 @@ if st.button("🔎 Find Missing SKUs", type="primary", use_container_width=True)
                     else:
                         st.warning(f"⚠️ Found **{len(missing_skus)}** SKUs in the All Listing file that are missing from the Databank.")
                         
-                        missing_df = pd.DataFrame(sorted(list(missing_skus)), columns=["Missing seller-sku"])
+                        # Filter the original All Listing dataframe to only show the missing SKUs
+                        # This keeps the ASIN and Status intact
+                        missing_df = df_all[df_all["seller-sku"].isin(missing_skus)].copy()
                         
+                        # Rename columns for a cleaner display
+                        missing_df = missing_df.rename(columns={
+                            "seller-sku": "SKU",
+                            "asin1": "ASIN",
+                            "status": "Status"
+                        })
+                        
+                        # Show the results
                         st.dataframe(missing_df.head(100), use_container_width=True, hide_index=True)
                         
                         if len(missing_df) > 100:
                             st.caption(f"*Showing the first 100 of {len(missing_df)} missing SKUs. Download the CSV to see all.*")
 
-                        csv_data = missing_df.to_csv(index=False).encode("utf-8")
+                        # Prepare CSV for download
+                        csv_data = missing_df.to_csv(index=False).encode("utf-8-sig")
                         st.download_button(
                             label="⬇️ Download Missing SKUs (CSV)",
                             data=csv_data,
