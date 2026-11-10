@@ -1,11 +1,13 @@
 """
-SKU Gap Finder — Compare All Listing vs Databank.
+SKU Gap Finder — Compare All Listing vs Databank (ZIP or CSV).
 """
+import io
+import zipfile
 import pandas as pd
 import streamlit as st
 
 st.markdown('<h1 style="margin-bottom:0;">SKU Gap Finder</h1>', unsafe_allow_html=True)
-st.markdown('<p style="opacity:0.7; margin-bottom:2rem;">Compare your All Listing file against your Databank CSV to find missing SKUs.</p>', unsafe_allow_html=True)
+st.markdown('<p style="opacity:0.7; margin-bottom:2rem;">Compare your All Listing file against your Databank (ZIP of brand CSVs) to find missing SKUs.</p>', unsafe_allow_html=True)
 
 col1, col2 = st.columns(2)
 
@@ -15,9 +17,9 @@ with col1:
     file_all = st.file_uploader("Upload All Listing CSV", type=["csv"], key="gap_all")
 
 with col2:
-    st.markdown("### 2. Databank CSV")
-    st.info("Upload your master Databank CSV file.")
-    file_db = st.file_uploader("Upload Databank CSV", type=["csv"], key="gap_db")
+    st.markdown("### 2. Databank Output")
+    st.info("Upload the ZIP file containing the per-brand CSVs.")
+    file_db = st.file_uploader("Upload Databank ZIP", type=["zip"], key="gap_db")
 
 if st.button("🔎 Find Missing SKUs", type="primary", use_container_width=True):
     if not file_all or not file_db:
@@ -25,44 +27,56 @@ if st.button("🔎 Find Missing SKUs", type="primary", use_container_width=True)
     else:
         with st.spinner("Comparing files..."):
             try:
-                # Read both files as strings to avoid formatting issues
+                # 1. Read the All Listing file
                 df_all = pd.read_csv(file_all, dtype=str)
-                df_db = pd.read_csv(file_db, dtype=str)
-
-                # Clean up column names to be safe
                 df_all.columns = [str(c).strip().lower() for c in df_all.columns]
-                df_db.columns = [str(c).strip().lower() for c in df_db.columns]
 
-                # Check for the required SKU column
                 if "seller-sku" not in df_all.columns:
                     st.error("❌ 'All Listing' file must contain a 'seller-sku' column.")
-                elif "seller-sku" not in df_db.columns:
-                    st.error("❌ 'Databank' file must contain a 'seller-sku' column.")
                 else:
-                    # Get unique SKUs, stripping whitespace and dropping empty rows
                     skus_all = set(df_all["seller-sku"].dropna().astype(str).str.strip().unique())
-                    skus_db = set(df_db["seller-sku"].dropna().astype(str).str.strip().unique())
 
-                    # Find the difference: SKUs in All Listing but NOT in Databank
+                    # 2. Read the Databank ZIP file
+                    skus_db = set()
+                    
+                    with zipfile.ZipFile(file_db, "r") as z:
+                        # Loop through every file in the ZIP
+                        for filename in z.namelist():
+                            # Check if it's a CSV file
+                            if filename.endswith(".csv"):
+                                with z.open(filename) as f:
+                                    try:
+                                        # Read the CSV from the ZIP
+                                        df_brand = pd.read_csv(f, dtype=str)
+                                        df_brand.columns = [str(c).strip().lower() for c in df_brand.columns]
+                                        
+                                        # If this brand CSV has SKUs, add them to our master set
+                                        if "sku" in df_brand.columns:
+                                            brand_skus = df_brand["sku"].dropna().astype(str).str.strip().unique()
+                                            skus_db.update(brand_skus)
+                                    except Exception as e:
+                                        # Skip files that can't be read (like audit files)
+                                        pass
+
+                    # 3. Find the difference
                     missing_skus = skus_all - skus_db
 
                     st.divider()
                     
-                    if not missing_skus:
-                        st.success("✅ Perfect match! All SKUs in the All Listing file already exist in the Databank.")
+                    if not skus_db:
+                        st.error("❌ No SKUs found inside the uploaded ZIP file. Make sure the ZIP contains the brand CSVs with a 'SKU' column.")
+                    elif not missing_skus:
+                        st.success(f"✅ Perfect match! All {len(skus_all)} SKUs in the All Listing file already exist in the Databank.")
                     else:
                         st.warning(f"⚠️ Found **{len(missing_skus)}** SKUs in the All Listing file that are missing from the Databank.")
                         
-                        # Create a dataframe for the results
                         missing_df = pd.DataFrame(sorted(list(missing_skus)), columns=["Missing seller-sku"])
                         
-                        # Show a preview of the first 100 missing SKUs
                         st.dataframe(missing_df.head(100), use_container_width=True, hide_index=True)
                         
                         if len(missing_df) > 100:
                             st.caption(f"*Showing the first 100 of {len(missing_df)} missing SKUs. Download the CSV to see all.*")
 
-                        # Prepare CSV for download
                         csv_data = missing_df.to_csv(index=False).encode("utf-8")
                         st.download_button(
                             label="⬇️ Download Missing SKUs (CSV)",
