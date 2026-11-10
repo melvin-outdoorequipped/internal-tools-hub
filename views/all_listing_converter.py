@@ -9,12 +9,15 @@ from datetime import datetime
 import pandas as pd
 import streamlit as st
 
+from theme import page_header, section_label
+
 COLUMNS = ["seller-sku", "asin1", "status"]
 
-st.markdown('<h1 style="margin-bottom:0;">All Listing Converter</h1>', unsafe_allow_html=True)
-st.markdown('<p style="opacity:0.7; margin-bottom:2rem;">Convert raw Amazon files to clean CSVs.</p>', unsafe_allow_html=True)
+page_header("🛠️", "All Listing Converter",
+            "Convert raw Amazon files to clean CSVs.",
+            eyebrow="Data Converter")
 
-st.markdown("### Step 1: Select All Listing File")
+section_label("Step 1 · Select All Listing File")
 st.info("Upload an All Listing XLS/XLSX file (or ZIP). It will be converted into a single CSV containing only `seller-sku`, `asin1`, and `status`.")
 
 file_t1 = st.file_uploader("Upload Excel or ZIP", type=["xlsx", "xls", "zip"], key="upload_t1")
@@ -29,7 +32,7 @@ if st.button("📂 Convert to CSV", type="primary", key="btn_t1"):
                 if file_t1.name.lower().endswith(".zip"):
                     with zipfile.ZipFile(file_t1, "r") as z:
                         excel_files = [
-                            f for f in z.namelist() 
+                            f for f in z.namelist()
                             if f.endswith((".xlsx", ".xls")) and not f.startswith("__MACOSX")
                         ]
                         if not excel_files:
@@ -40,9 +43,9 @@ if st.button("📂 Convert to CSV", type="primary", key="btn_t1"):
                             with z.open(target_excel) as f:
                                 engine = "openpyxl" if target_excel.endswith(".xlsx") else "xlrd"
                                 sheets = pd.read_excel(f, sheet_name=None, dtype=str, engine=engine)
-                                
+
                                 for name, df in sheets.items():
-                                    df.columns = [str(c).strip().lstrip("\ufeff") for c in df.columns]
+                                    df.columns = [str(c).strip().lstrip("﻿") for c in df.columns]
                                     missing = [c for c in COLUMNS if c not in df.columns]
                                     if missing:
                                         st.warning(f"⚠ Sheet '{name}' skipped — missing: {missing}")
@@ -53,9 +56,9 @@ if st.button("📂 Convert to CSV", type="primary", key="btn_t1"):
                 else:
                     engine = "openpyxl" if file_t1.name.endswith(".xlsx") else "xlrd"
                     sheets = pd.read_excel(file_t1, sheet_name=None, dtype=str, engine=engine)
-                    
+
                     for name, df in sheets.items():
-                        df.columns = [str(c).strip().lstrip("\ufeff") for c in df.columns]
+                        df.columns = [str(c).strip().lstrip("﻿") for c in df.columns]
                         missing = [c for c in COLUMNS if c not in df.columns]
                         if missing:
                             st.warning(f"⚠ Sheet '{name}' skipped — missing: {missing}")
@@ -67,12 +70,12 @@ if st.button("📂 Convert to CSV", type="primary", key="btn_t1"):
                 if frames:
                     final_df = pd.concat(frames, ignore_index=True).fillna("")
                     st.success(f"✅ Total rows combined: {len(final_df)}")
-                    
+
                     csv_data = final_df.to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig")
-                    
+
                     date_str = datetime.now().strftime("%Y-%m-%d")
                     filename = f"All Listing ({date_str}).csv"
-                    
+
                     st.download_button(
                         label="⬇️ Download Converted CSV",
                         data=csv_data,
@@ -82,6 +85,6 @@ if st.button("📂 Convert to CSV", type="primary", key="btn_t1"):
                     )
                 else:
                     st.error("❌ No valid data found.")
-                    
+
             except Exception as e:
                 st.error(f"❌ Error: {e}")

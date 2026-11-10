@@ -1,124 +1,108 @@
 import streamlit as st
 
+from theme import inject_theme, section_label
+
 st.set_page_config(
-    page_title="Internal Tools Hub",
-    page_icon="🛠️",
+    page_title="Operations Command Center",
+    page_icon="⚡",
     layout="wide",
     initial_sidebar_state="expanded",
 )
 
-# ----------------------------------------------------------------------
-# Custom CSS for the Home Screen
-# ----------------------------------------------------------------------
-st.markdown(
-    """
-    <style>
-      .block-container { padding-top: 3rem; max-width: 1200px; }
-      .hero-title { font-size: 3rem; font-weight: 800; margin-bottom: 0.5rem; }
-      .hero-sub { font-size: 1.2rem; opacity: 0.7; margin-bottom: 3rem; }
-      .tool-card {
-          padding: 1.5rem; 
-          border-radius: 12px; 
-          border: 1px solid rgba(127,127,127,0.2);
-          background: rgba(127,127,127,0.05);
-          transition: 0.2s;
-          height: 100%;
-      }
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
+# Global premium theme (applies to Home + all tools)
+inject_theme()
 
 # ----------------------------------------------------------------------
-# 1. Define the custom sidebar navigation
+# Navigation Setup
 # ----------------------------------------------------------------------
 pg = st.navigation({
-    "Tools": [
+    "Platform": [
         st.Page("app.py", title="Home", icon="🏠"),
-        st.Page("views/amazon_converter.py", title="Amazon Databank Converter", icon="📦"),
+    ],
+    "Data Converters": [
+        st.Page("views/amazon_converter.py", title="Databank Converter", icon="📦"),
         st.Page("views/all_listing_converter.py", title="All Listing Converter", icon="🛠️"),
+        st.Page("views/aged_inventory_converter.py", title="Aged Inventory Converter", icon="📊"),
+    ],
+    "Analysis Tools": [
         st.Page("views/sku_gap_finder.py", title="SKU Gap Finder", icon="🔎"),
     ]
 })
 
+with st.sidebar:
+    st.markdown(
+        """
+        <div class="sidebar-brand"><div class="dot">⚡</div>Command Center</div>
+        <div class="sidebar-sub">Operations data toolkit</div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def tool_card(key: str, icon: str, title: str, desc: str, button_label: str, target: str) -> None:
+    """A tool card: styled container with description + open button inside it."""
+    with st.container(key=f"card_{key}"):
+        st.markdown(
+            f"""
+            <div class="tool-icon">{icon}</div>
+            <div class="tool-title">{title}</div>
+            <div class="tool-desc">{desc}</div>
+            """,
+            unsafe_allow_html=True,
+        )
+        if st.button(button_label, key=f"btn_{key}", use_container_width=True):
+            st.switch_page(target)
+
+
 # ----------------------------------------------------------------------
-# 2. Render the Home Page
+# Home Page Layout
 # ----------------------------------------------------------------------
 if pg.title == "Home":
-    st.markdown('<div class="hero-title">Internal Tools Hub</div>', unsafe_allow_html=True)
-    st.markdown('<div class="hero-sub">Select a tool from the sidebar to begin.</div>', unsafe_allow_html=True)
+    st.markdown(
+        """
+        <div class="hero">
+            <div class="hero-badge">Operations Platform</div>
+            <h1 class="hero-title">Operations Command Center</h1>
+            <p class="hero-sub">Clean, convert and reconcile your listing and inventory data in a few clicks.</p>
+        </div>
 
-    st.markdown("### Available Tools")
+        <div class="flow">
+            <div class="flow-step"><div class="flow-num">1</div>
+                <div><div class="flow-title">Convert</div>
+                <div class="flow-desc">Turn raw All Listing &amp; inventory files into clean CSVs.</div></div></div>
+            <div class="flow-step"><div class="flow-num">2</div>
+                <div><div class="flow-title">Build the Databank</div>
+                <div class="flow-desc">Standardize brands and export per-brand CSVs.</div></div></div>
+            <div class="flow-step"><div class="flow-num">3</div>
+                <div><div class="flow-title">Find the gaps</div>
+                <div class="flow-desc">Spot SKUs that are missing from the Databank.</div></div></div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
-    # First Row of Tools
-    col1, col2 = st.columns(2)
-
+    section_label("📁 Data Converters")
+    col1, col2, col3 = st.columns(3, gap="medium")
     with col1:
-        with st.container():
-            st.markdown(
-                """
-                <div class="tool-card">
-                    <h3>📦 Amazon Databank Converter</h3>
-                    <p>Upload Excel workbooks, standardize brand names, verify duplicates, and export clean CSVs for the Databank.</p>
-                </div>
-                """, 
-                unsafe_allow_html=True
-            )
-            st.write("") 
-            if st.button("Open Converter", key="btn_databank", use_container_width=True):
-                st.switch_page("views/amazon_converter.py")
-
+        tool_card("db", "📦", "Databank Converter",
+                  "Standardize brand names, verify duplicates, and export clean CSVs for the Databank.",
+                  "Open Databank", "views/amazon_converter.py")
     with col2:
-        with st.container():
-            st.markdown(
-                """
-                <div class="tool-card">
-                    <h3>🛠️ All Listing Converter</h3>
-                    <p>Convert raw Amazon All Listing files (XLS/XLSX/ZIP) to clean CSVs containing only the required columns.</p>
-                </div>
-                """, 
-                unsafe_allow_html=True
-            )
-            st.write("") 
-            if st.button("Open Tool", key="btn_all_listing", use_container_width=True):
-                st.switch_page("views/all_listing_converter.py")
-
-    st.write("") # Spacing between rows
-
-    # Second Row of Tools
-    col3, col4 = st.columns(2)
-
+        tool_card("al", "🛠️", "All Listing Converter",
+                  "Convert raw Amazon All Listing files (XLS/ZIP) to clean CSVs with strict column filtering.",
+                  "Open All Listing", "views/all_listing_converter.py")
     with col3:
-        with st.container():
-            st.markdown(
-                """
-                <div class="tool-card">
-                    <h3>🔎 SKU Gap Finder</h3>
-                    <p>Compare your All Listing file against your Databank to instantly find missing SKUs.</p>
-                </div>
-                """, 
-                unsafe_allow_html=True
-            )
-            st.write("") 
-            if st.button("Open Finder", key="btn_gap_finder", use_container_width=True):
-                st.switch_page("views/sku_gap_finder.py")
+        tool_card("ai", "📊", "Aged Inventory",
+                  "Process FBA &amp; 3PL reports, extracting standard columns and separating by SM Manager.",
+                  "Open Aged Inventory", "views/aged_inventory_converter.py")
 
+    st.write("")
+    section_label("🔎 Analysis Tools")
+    col4, _, _ = st.columns(3, gap="medium")
     with col4:
-        with st.container():
-            st.markdown(
-                """
-                <div class="tool-card">
-                    <h3>🧩 Future Tool</h3>
-                    <p>This space is reserved for your next web application or utility.</p>
-                </div>
-                """, 
-                unsafe_allow_html=True
-            )
-            st.write("")
-            st.button("Coming Soon...", key="btn_future", disabled=True, use_container_width=True)
+        tool_card("gap", "🔎", "SKU Gap Finder",
+                  "Compare your All Listing file against the Databank ZIP to instantly find missing SKUs.",
+                  "Open Gap Finder", "views/sku_gap_finder.py")
 
-# ----------------------------------------------------------------------
-# 3. Run the selected page if not on Home
-# ----------------------------------------------------------------------
 else:
     pg.run()

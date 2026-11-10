@@ -12,34 +12,10 @@ from components.dashboard import render_dashboard
 from components.upload import render_upload
 from components.brand_manager import render_brand_manager
 from components.reports import render_convert_button, render_results
+from theme import page_header
 
 HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MAPPING_FILE = os.path.join(HERE, "data", "brand_mapping.json")
-
-# ----------------------------------------------------------------------
-# Page config
-# ----------------------------------------------------------------------
-st.set_page_config(
-    page_title="Amazon Listing Databank Converter",
-    page_icon="📦",
-    layout="wide",
-)
-
-st.markdown(
-    """
-    <style>
-      div[data-testid="stMetric"] {
-          background: rgba(127,127,127,0.08);
-          border: 1px solid rgba(127,127,127,0.18);
-          border-radius: 10px;
-          padding: 14px 16px;
-      }
-      div[data-testid="stMetricLabel"] { font-size: 0.85rem; opacity: 0.8; }
-      div[data-testid="stMetricValue"] { font-size: 1.6rem; font-weight: 600; }
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
 
 def _init_state():
     defaults = {
@@ -77,8 +53,9 @@ with st.sidebar:
 # ----------------------------------------------------------------------
 # Main Content Area
 # ----------------------------------------------------------------------
-st.markdown('<h1 style="margin-bottom:0;">Amazon Listing Databank Converter</h1>', unsafe_allow_html=True)
-st.markdown('<p style="opacity:0.7; margin-bottom:2rem;">Standardize brand names across Excel worksheets and export clean, per-brand CSVs for your Databank.</p>', unsafe_allow_html=True)
+page_header("📦", "Amazon Listing Databank Converter",
+            "Standardize brand names across Excel worksheets and export clean, per-brand CSVs for your Databank.",
+            eyebrow="Data Converter")
 
 # Tabs for the different phases of the app
 tab1, tab2, tab3, tab4 = st.tabs([
