@@ -26,6 +26,7 @@ pg = st.navigation({
     ],
     "Analysis Tools": [
         st.Page("views/sku_gap_finder.py", title="SKU Gap Finder", icon="🔎"),
+        st.Page("views/upc_gatherer.py", title="UPC Gatherer", icon="🔗"),
     ]
 })
 
@@ -98,11 +99,15 @@ if pg.title == "Home":
 
     st.write("")
     section_label("🔎 Analysis Tools")
-    col4, _, _ = st.columns(3, gap="medium")
+    col4, col5, _ = st.columns(3, gap="medium")
     with col4:
         tool_card("gap", "🔎", "SKU Gap Finder",
                   "Compare your All Listing file against the Databank ZIP to instantly find missing SKUs.",
                   "Open Gap Finder", "views/sku_gap_finder.py")
+    with col5:
+        tool_card("upc", "🔗", "UPC Gatherer",
+                  "Match your missing SKUs against Amazon Listing files to automatically pull their UPCs.",
+                  "Open UPC Gatherer", "views/upc_gatherer.py")
 
 else:
     pg.run()
