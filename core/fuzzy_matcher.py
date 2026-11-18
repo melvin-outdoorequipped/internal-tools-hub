@@ -1,16 +1,10 @@
 """
-Fuzzy duplicate detection using SequenceMatcher at 90% threshold,
-plus frequency-based canonical selection.
-Preserves original _build_rows behavior.
+Fuzzy duplicate detection using SequenceMatcher at 90% threshold.
 """
 from difflib import SequenceMatcher
-
 from core.brand_normalizer import normalize_brand, is_sku_like, is_2p_brand
 
-
 def build_brand_rows(master, mapper):
-    """Given a DataFrame with a Brand column and a BrandMapper, return
-    (rows, stats) exactly matching the Tkinter app's _build_rows."""
     vc = master["Brand"].astype(str).str.strip().value_counts()
     raw_list = [str(x) for x in vc.index]
     freq = {str(k): int(v) for k, v in vc.items()}
@@ -22,7 +16,7 @@ def build_brand_rows(master, mapper):
 
     display = {n: max(vars, key=lambda r: freq.get(r, 0)) for n, vars in norm_groups.items()}
 
-    # Apply JSON aliases (respect disabled)
+    # Apply JSON and DOCT aliases
     for n in list(display):
         canon, disabled = mapper.lookup(display[n])
         if disabled:
@@ -31,13 +25,17 @@ def build_brand_rows(master, mapper):
             display[n] = canon
 
     merged = dict(display)
+    
+    # Protect brands that are in the DOCT dictionary or JSON from fuzzy matching
     canon_keys = [
-        k
-        for k in display
+        k for k in display
         if not is_sku_like(display[k])
         and normalize_brand(k) not in mapper.disabled_aliases
         and not is_2p_brand(display[k])
+        and normalize_brand(k) not in mapper.aliases
+        and normalize_brand(k) not in mapper.doct_brands # <--- NEW: Protect DOCT
     ]
+    
     for i, a in enumerate(canon_keys):
         for b in canon_keys[i + 1 :]:
             ca, cb = display[a], display[b]
@@ -63,7 +61,9 @@ def build_brand_rows(master, mapper):
             canon = merged.get(n, raw)
             mt, status = "Suspicious (SKU)", "Needs Review"
         elif canon is not None:
-            mt, status = "JSON Alias", "Approved"
+            # If it was found in DOCT or JSON, tag it properly
+            mt = "DOCT Lookup" if n in mapper.doct_brands and n not in mapper.aliases else "JSON Alias"
+            status = "Approved"
         else:
             canon = merged.get(n, raw)
             if canon != raw and normalize_brand(canon) != n:
@@ -73,17 +73,11 @@ def build_brand_rows(master, mapper):
             else:
                 mt, status = "Exact", "Approved"
 
-        rows.append(
-            dict(
-                Original_Brand=raw,
-                Canonical_Brand=canon,
-                Match_Type=mt,
-                Status=status,
-            )
-        )
+        rows.append(dict(Original_Brand=raw, Canonical_Brand=canon, Match_Type=mt, Status=status))
 
     stats = {
         "Total Unique Brands Extracted": len(raw_list),
+        "DOCT Matches": sum(1 for r in rows if r["Match_Type"] == "DOCT Lookup"),
         "JSON Alias Hits": sum(1 for r in rows if r["Match_Type"] == "JSON Alias"),
         "Disabled/2P Excluded": sum(1 for r in rows if r["Match_Type"] == "Disabled (2P)"),
     }

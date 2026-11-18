@@ -1,22 +1,17 @@
 """Interactive brand mapping manager using st.data_editor."""
-import io
 import pandas as pd
 import streamlit as st
-
 from core.brand_normalizer import normalize_brand
 
-
-MATCH_TYPES = ["Exact", "Formatting", "Fuzzy Auto-Merge", "JSON Alias", "Manual Merge", "Disabled (2P)", "Suspicious (SKU)"]
+# ADDED "DOCT Lookup" to match types
+MATCH_TYPES = ["Exact", "Formatting", "Fuzzy Auto-Merge", "JSON Alias", "DOCT Lookup", "Manual Merge", "Disabled (2P)", "Suspicious (SKU)"]
 STATUSES = ["Approved", "Needs Review", "Excluded"]
-
 
 def _rows_to_df(rows):
     return pd.DataFrame(rows, columns=["Original_Brand", "Canonical_Brand", "Match_Type", "Status"])
 
-
 def render_brand_manager(mapper):
     st.markdown("## Brand Mapping Manager")
-
     rows = st.session_state.get("brand_rows")
     if not rows:
         st.info("Upload an Excel file and click **Analyze Brands** to populate this table.")
@@ -24,8 +19,6 @@ def render_brand_manager(mapper):
         return
 
     df = _rows_to_df(rows)
-
-    # ---- filters ----
     c1, c2, c3, c4 = st.columns([2, 2, 2, 1])
     with c1:
         search = st.text_input("Search", placeholder="Search brand, canonical, type...")
@@ -38,7 +31,6 @@ def render_brand_manager(mapper):
             st.session_state["_clear_filters"] = True
             st.rerun()
 
-    # ensure default multiselect persists after clear
     if st.session_state.get("_clear_filters"):
         st.session_state["_clear_filters"] = False
 
@@ -56,25 +48,18 @@ def render_brand_manager(mapper):
 
     st.caption(f"Showing {len(filtered)} of {len(df)} rows")
 
-    # ---- editable table ----
     edited = st.data_editor(
-        filtered,
-        hide_index=True,
-        use_container_width=True,
-        num_rows="fixed",
+        filtered, hide_index=True, use_container_width=True, num_rows="fixed",
         column_config={
             "Select": st.column_config.CheckboxColumn("Select", width="small"),
             "Original_Brand": st.column_config.TextColumn("Original Brand", disabled=True, width="medium"),
             "Canonical_Brand": st.column_config.TextColumn("Canonical Brand", width="medium"),
-            "Match_Type": st.column_config.SelectboxColumn(
-                "Match Type", options=MATCH_TYPES, disabled=True, width="medium"
-            ),
+            "Match_Type": st.column_config.SelectboxColumn("Match Type", options=MATCH_TYPES, disabled=True, width="medium"),
             "Status": st.column_config.SelectboxColumn("Status", options=STATUSES, width="small"),
         },
         key="brand_editor",
     )
 
-    # ---- actions ----
     a1, a2, a3 = st.columns([1, 1, 2])
     with a1:
         if st.button("Approve Selected", type="primary", use_container_width=True):
@@ -88,7 +73,6 @@ def render_brand_manager(mapper):
     st.divider()
     _render_import_export(mapper)
 
-
 def _apply_edits(edited: pd.DataFrame, mapper, approve: bool):
     sel = edited[edited["Select"] == True]
     if sel.empty:
@@ -96,33 +80,29 @@ def _apply_edits(edited: pd.DataFrame, mapper, approve: bool):
         return
     _commit(sel, mapper, approve=approve, message=f"Approved & saved {len(sel)} row(s).")
 
-
 def _bulk_approve(filtered: pd.DataFrame, mapper):
     if filtered.empty:
         st.warning("Nothing to approve.")
         return
     _commit(filtered, mapper, approve=True, message=f"Bulk-approved {len(filtered)} row(s).")
 
-
 def _commit(subset: pd.DataFrame, mapper, approve: bool, message: str):
     rows = st.session_state["brand_rows"]
-    # index by Original_Brand for fast update
     by_orig = {str(r["Original_Brand"]): r for r in rows}
     for _, row in subset.iterrows():
         orig = str(row["Original_Brand"])
-        if orig not in by_orig:
-            continue
+        if orig not in by_orig: continue
         canon = str(row["Canonical_Brand"]).strip()
         status = "Approved" if approve else str(row["Status"])
         mt = str(row["Match_Type"])
         if canon and normalize_brand(canon) != normalize_brand(orig):
             mt = "Manual Merge" if mt not in ("Disabled (2P)", "Suspicious (SKU)") else mt
+        
         r = by_orig[orig]
         r["Canonical_Brand"] = canon
         r["Match_Type"] = mt
         r["Status"] = status
 
-        # Persist mapping (skip disabled/2P auto-activation)
         if status == "Approved" and not mapper.is_disabled(canon):
             mapper.set_alias(orig, canon)
         elif status == "Excluded":
@@ -136,7 +116,6 @@ def _commit(subset: pd.DataFrame, mapper, approve: bool, message: str):
     else:
         st.warning(message + "  ⚠ Could not persist to disk (ephemeral filesystem). Use **Backup JSON** to save.")
     st.rerun()
-
 
 def _render_import_export(mapper):
     st.markdown("### Import / Export Mappings")

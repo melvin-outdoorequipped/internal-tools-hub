@@ -41,13 +41,14 @@ if st.button("🔎 Find Missing SKUs", type="primary", use_container_width=True)
     else:
         with st.spinner("Comparing files..."):
             try:
-                # 1. Read the All Listing file
+                # ---- 1. Read the All Listing file ----
+                file_all.seek(0)
                 df_all = pd.read_csv(file_all, dtype=str)
                 df_all.columns = [str(c).strip() for c in df_all.columns]
 
                 required_cols = ["seller-sku", "asin1", "status"]
                 missing_req = [c for c in required_cols if c not in df_all.columns]
-                
+
                 if missing_req:
                     st.error(f"❌ 'All Listing' file must contain these columns: {missing_req}")
                 else:
@@ -55,68 +56,94 @@ if st.button("🔎 Find Missing SKUs", type="primary", use_container_width=True)
                     df_all["seller-sku"] = df_all["seller-sku"].astype(str).str.strip()
                     skus_all = set(df_all["seller-sku"].unique())
 
-                    # 2. Read the Databank ZIP file to get existing SKUs
+                    # ---- 2. Read the Databank ZIP to get existing SKUs ----
+                    file_db.seek(0)
                     skus_db = set()
+                    failed_files = []
                     with zipfile.ZipFile(file_db, "r") as z:
                         for filename in z.namelist():
-                            if filename.endswith(".csv") and not filename.startswith("_"): 
-                                with z.open(filename) as f:
-                                    try:
+                            if filename.endswith(".csv") and not filename.startswith("_"):
+                                try:
+                                    with z.open(filename) as f:
                                         df_brand = pd.read_csv(f, dtype=str)
-                                        df_brand.columns = [str(c).strip().lower() for c in df_brand.columns]
-                                        if "sku" in df_brand.columns:
-                                            brand_skus = df_brand["sku"].dropna().astype(str).str.strip().unique()
-                                            skus_db.update(brand_skus)
-                                    except Exception:
-                                        pass
+                                    df_brand.columns = [str(c).strip().lower() for c in df_brand.columns]
+                                    if "sku" in df_brand.columns:
+                                        brand_skus = df_brand["sku"].dropna().astype(str).str.strip().unique()
+                                        skus_db.update(brand_skus)
+                                except Exception as e:
+                                    failed_files.append((filename, str(e)))
 
-                    # 3. Find the difference
+                    # ---- 3. Find the difference ----
                     missing_skus = skus_all - skus_db
 
                     st.divider()
-                    
+
+                    if failed_files:
+                        with st.expander(f"⚠️ {len(failed_files)} file(s) could not be read"):
+                            for fn, err in failed_files:
+                                st.text(f"{fn}: {err}")
+
                     if not skus_db:
                         st.error("❌ No SKUs found inside the uploaded ZIP file.")
                     elif not missing_skus:
                         st.success(f"✅ Perfect match! All {len(skus_all)} SKUs in the All Listing file already exist in the Databank.")
+                        # Clear stale gap results if any
+                        for k in ["gap_missing_csv", "gap_count", "gap_total"]:
+                            st.session_state.pop(k, None)
                     else:
-                        st.warning(f"⚠️ Found **{len(missing_skus)}** SKUs in the All Listing file that are missing from the Databank.")
-                        
-                        # Filter All Listing for missing SKUs
                         missing_df = df_all[df_all["seller-sku"].isin(missing_skus)].copy()
-                        
-                        # Rename columns for a cleaner display
                         missing_df = missing_df.rename(columns={
                             "seller-sku": "SKU",
                             "asin1": "ASIN",
                             "status": "Status"
                         })
-                        
-                        # Show the results
-                        st.dataframe(missing_df.head(100), use_container_width=True, hide_index=True)
-                        
-                        if len(missing_df) > 100:
-                            st.caption(f"*Showing the first 100 of {len(missing_df)} missing SKUs. Download the CSV to see all.*")
 
-                        # Prepare CSV for download
-                        csv_data = missing_df.to_csv(index=False).encode("utf-8-sig")
-                        st.download_button(
-                            label="⬇️ Download Missing SKUs (CSV)",
-                            data=csv_data,
-                            file_name="missing_skus.csv",
-                            mime="text/csv",
-                            type="primary"
-                        )
+                        # Save to session state so download persists
+                        st.session_state["gap_missing_csv"] = missing_df.to_csv(index=False).encode("utf-8-sig")
+                        st.session_state["gap_count"] = len(missing_skus)
+                        st.session_state["gap_total"] = len(skus_all)
+
             except Exception as e:
                 st.error(f"❌ Error processing files: {e}")
+
+# Render Gap Finder results outside the button block so downloads persist
+if "gap_missing_csv" in st.session_state:
+    st.divider()
+    st.warning(
+        f"⚠️ Found **{st.session_state['gap_count']}** SKUs in the All Listing file "
+        f"that are missing from the Databank (out of {st.session_state['gap_total']} total)."
+    )
+
+    # Rebuild the display DataFrame from the stored CSV
+    gap_display = pd.read_csv(io.BytesIO(st.session_state["gap_missing_csv"]), dtype=str)
+    st.dataframe(gap_display.head(100), use_container_width=True, hide_index=True)
+    if len(gap_display) > 100:
+        st.caption(f"*Showing the first 100 of {len(gap_display)} missing SKUs. Download the CSV to see all.*")
+
+    st.download_button(
+        label="⬇️ Download Missing SKUs (CSV)",
+        data=st.session_state["gap_missing_csv"],
+        file_name="missing_skus.csv",
+        mime="text/csv",
+        type="primary",
+        key="dl_missing_skus",
+    )
+
+    if st.button("🗑️ Clear Gap Results", key="clear_gap_results"):
+        for k in ["gap_missing_csv", "gap_count", "gap_total"]:
+            st.session_state.pop(k, None)
+        st.rerun()
 
 st.divider()
 
 # ---------------------------------------------------------
-# Title Injection Logic
+# Title Injection Logic (SKU -> ASIN fallback, excludes unmatched)
 # ---------------------------------------------------------
 st.markdown("### 3. Inject Product Titles into Databank")
-st.info("This will read your Databank ZIP, look up the Product Title (item-name) from the All Listing CSV for every SKU, and output a new ZIP with the titles injected next to the ASIN.")
+st.info(
+    "Matches each Databank SKU against the All Listing file — first by SKU, then by ASIN as fallback. "
+    "Rows that match neither are **excluded** from the updated ZIP and exported to a separate CSV."
+)
 
 if st.button("💉 Inject Product Titles", type="primary", use_container_width=True):
     if not file_all or not file_db:
@@ -124,77 +151,173 @@ if st.button("💉 Inject Product Titles", type="primary", use_container_width=T
     else:
         with st.spinner("Injecting Product Titles..."):
             try:
-                # 1. Read All Listing to build SKU -> Title map
+                # ---- 1. Read All Listing ----
+                file_all.seek(0)
                 df_all = pd.read_csv(file_all, dtype=str)
                 df_all.columns = [str(c).strip().lower() for c in df_all.columns]
-                
-                # Look for title column
-                title_col = next((c for c in ["item-name", "item name", "product title", "title"] if c in df_all.columns), None)
+
+                title_col = next(
+                    (c for c in ["item-name", "item name", "product title", "title"]
+                     if c in df_all.columns), None
+                )
                 if not title_col:
                     st.error("❌ No item-name or title column found in the All Listing file.")
                     st.stop()
 
+                if "seller-sku" not in df_all.columns:
+                    st.error("❌ All Listing file is missing 'seller-sku'.")
+                    st.stop()
+
                 df_all = df_all.dropna(subset=["seller-sku"])
                 df_all["seller-sku"] = df_all["seller-sku"].astype(str).str.strip()
-                df_all[title_col] = df_all[title_col].astype(str).str.strip()
-                
-                # Create lookup dict
-                sku_to_title = dict(zip(df_all["seller-sku"], df_all[title_col]))
+                df_all[title_col]    = df_all[title_col].astype(str).str.strip()
+                if "asin1" in df_all.columns:
+                    df_all["asin1"] = df_all["asin1"].astype(str).str.strip()
 
-                # 2. Process Databank ZIP
+                sku_to_title  = dict(zip(df_all["seller-sku"], df_all[title_col]))
+                asin_to_title = (
+                    dict(zip(df_all["asin1"], df_all[title_col]))
+                    if "asin1" in df_all.columns else {}
+                )
+
+                # ---- 2. Process Databank ZIP ----
                 zip_out = io.BytesIO()
-                updated_count = 0
-                
+                updated_files = 0
+                total_matched_by_sku  = 0
+                total_matched_by_asin = 0
+                missing_rows = []
+
+                file_db.seek(0)
                 with zipfile.ZipFile(file_db, "r") as zin:
                     with zipfile.ZipFile(zip_out, "w", zipfile.ZIP_DEFLATED) as zout:
                         for filename in zin.namelist():
-                            if filename.endswith(".csv") and not filename.startswith("_"):
-                                with zin.open(filename) as f:
-                                    try:
-                                        df_brand = pd.read_csv(f, dtype=str)
-                                        # Normalize column names for matching
-                                        df_brand.columns = [str(c).strip() for c in df_brand.columns]
-                                        
-                                        # Find the SKU column in the brand CSV
-                                        sku_col = next((c for c in df_brand.columns if c.lower() == "sku"), None)
-                                        
-                                        if sku_col:
-                                            # Clean SKUs
-                                            df_brand[sku_col] = df_brand[sku_col].astype(str).str.strip()
-                                            
-                                            # Map titles
-                                            df_brand["Product Title"] = df_brand[sku_col].map(sku_to_title).fillna("")
-                                            
-                                            # Move Product Title next to ASIN
-                                            cols = list(df_brand.columns)
-                                            if "ASIN" in cols and "Product Title" in cols:
-                                                cols.remove("Product Title")
-                                                asin_idx = cols.index("ASIN")
-                                                cols.insert(asin_idx + 1, "Product Title")
-                                                df_brand = df_brand[cols]
-                                                
-                                            updated_count += 1
-                                        
-                                        # Save back to zip
-                                        csv_bytes = df_brand.to_csv(index=False).encode("utf-8-sig")
-                                        zout.writestr(filename, csv_bytes)
-                                    except Exception as e:
-                                        # If it fails, just copy the file as-is
-                                        zout.writestr(filename, zin.read(filename))
-                            else:
-                                # Copy non-CSV files as-is
+                            if not (filename.endswith(".csv") and not filename.startswith("_")):
                                 zout.writestr(filename, zin.read(filename))
+                                continue
 
+                            try:
+                                with zin.open(filename) as f:
+                                    df_brand = pd.read_csv(f, dtype=str)
+                                df_brand.columns = [str(c).strip() for c in df_brand.columns]
+
+                                sku_col  = next((c for c in df_brand.columns if c.lower() == "sku"),  None)
+                                asin_col = next((c for c in df_brand.columns if c.lower() == "asin"), None)
+
+                                if not sku_col and not asin_col:
+                                    zout.writestr(filename, zin.read(filename))
+                                    continue
+
+                                if sku_col:
+                                    df_brand[sku_col] = df_brand[sku_col].astype(str).str.strip()
+                                if asin_col:
+                                    df_brand[asin_col] = df_brand[asin_col].astype(str).str.strip()
+
+                                # Match: SKU first, ASIN fallback
+                                title_sku  = df_brand[sku_col].map(sku_to_title)   if sku_col  else pd.Series([None]*len(df_brand))
+                                title_asin = df_brand[asin_col].map(asin_to_title) if asin_col else pd.Series([None]*len(df_brand))
+
+                                # Normalize sentinel values so fallback works
+                                for s in (title_sku, title_asin):
+                                    s.replace({pd.NA: None, "nan": None, "None": None, "": None}, inplace=True)
+
+                                df_brand["Product Title"] = title_sku.fillna(title_asin).fillna("")
+                                match_source = pd.Series("sku", index=df_brand.index)
+                                match_source[title_sku.isna() & title_asin.notna()] = "asin"
+                                match_source[df_brand["Product Title"] == ""] = "missing"
+
+                                matched_by_sku  = int((match_source == "sku").sum())
+                                matched_by_asin = int((match_source == "asin").sum())
+                                missing_mask    = match_source == "missing"
+
+                                total_matched_by_sku  += matched_by_sku
+                                total_matched_by_asin += matched_by_asin
+
+                                # Record + drop missing rows
+                                if missing_mask.any():
+                                    for idx in df_brand.index[missing_mask]:
+                                        missing_rows.append({
+                                            "brand_file": filename,
+                                            "SKU":  df_brand.at[idx, sku_col]  if sku_col  else "",
+                                            "ASIN": df_brand.at[idx, asin_col] if asin_col else "",
+                                            "reason": "Not found in All Listing (SKU or ASIN)",
+                                        })
+                                    df_brand = df_brand[~missing_mask].copy()
+
+                                # 🔴 NEW CHECK: If the dataframe is completely empty after dropping missing rows, skip it!
+                                if df_brand.empty:
+                                    continue
+
+                                # Reposition Product Title next to ASIN
+                                if "Product Title" in df_brand.columns and asin_col:
+                                    cols = [c for c in df_brand.columns if c != "Product Title"]
+                                    asin_idx = cols.index(asin_col)
+                                    cols.insert(asin_idx + 1, "Product Title")
+                                    df_brand = df_brand[cols]
+
+                                zout.writestr(filename, df_brand.to_csv(index=False).encode("utf-8-sig"))
+                                updated_files += 1
+
+                            except Exception as e:
+                                zout.writestr(filename, zin.read(filename))
+                                st.warning(f"⚠️ Could not process `{filename}`: {e}")
+
+                # ---- 3. Save results to session state ----
                 zip_out.seek(0)
-                st.success(f"✅ Successfully injected Product Titles into {updated_count} brand files.")
-                
-                st.download_button(
-                    label="⬇️ Download Updated Databank ZIP",
-                    data=zip_out.getvalue(),
-                    file_name="databank_with_titles.zip",
-                    mime="application/zip",
-                    type="primary"
-                )
+                st.session_state["inject_zip_bytes"] = zip_out.getvalue()
+                st.session_state["inject_missing_df"] = pd.DataFrame(missing_rows) if missing_rows else None
+                st.session_state["inject_summary"] = {
+                    "updated_files": updated_files,
+                    "by_sku": total_matched_by_sku,
+                    "by_asin": total_matched_by_asin,
+                    "missing_count": len(missing_rows),
+                }
 
             except Exception as e:
                 st.error(f"❌ Error processing files: {e}")
+
+# ---------------------------------------------------------
+# Render Title Injector results outside the button block
+# ---------------------------------------------------------
+if "inject_summary" in st.session_state:
+    s = st.session_state["inject_summary"]
+
+    st.success(
+        f"✅ Processed **{s['updated_files']}** brand files. "
+        f"Matched **{s['by_sku']}** by SKU, "
+        f"**{s['by_asin']}** by ASIN fallback."
+    )
+
+    missing_df = st.session_state.get("inject_missing_df")
+
+    if missing_df is not None and not missing_df.empty:
+        st.warning(
+            f"⚠️ **{len(missing_df)}** rows could not be matched to any title "
+            f"and were **excluded** from the updated ZIP."
+        )
+        st.dataframe(missing_df.head(100), use_container_width=True, hide_index=True)
+        if len(missing_df) > 100:
+            st.caption(f"*Showing the first 100 of {len(missing_df)} missing rows.*")
+
+        st.download_button(
+            label="⬇️ Download Missing Records (CSV)",
+            data=missing_df.to_csv(index=False).encode("utf-8-sig"),
+            file_name="missing_records.csv",
+            mime="text/csv",
+            key="dl_missing_records",
+        )
+    else:
+        st.success("🎉 Every row in the Databank got a title — nothing missing.")
+
+    st.download_button(
+        label="⬇️ Download Updated Databank ZIP",
+        data=st.session_state["inject_zip_bytes"],
+        file_name="databank_with_titles.zip",
+        mime="application/zip",
+        type="primary",
+        key="dl_updated_zip",
+    )
+
+    if st.button("🗑️ Clear Injection Results", key="clear_inject_results"):
+        for k in ["inject_zip_bytes", "inject_missing_df", "inject_summary"]:
+            st.session_state.pop(k, None)
+        st.rerun()
